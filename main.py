@@ -1,11 +1,12 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all (perfect for hackathon)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -17,16 +18,13 @@ def home():
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    # Read CSV file
     df = pd.read_csv(file.file)
 
-    # Basic metrics
     avg_speed = df["speed"].mean()
     max_speed = df["speed"].max()
     avg_throttle = df["throttle"].mean()
     avg_brake = df["brake"].mean()
 
-    # Simple logic (your "AI coach" v1)
     feedback = []
 
     if avg_brake > 0.3:
