@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import io
 import requests
+import time
 
 app = FastAPI()
 
@@ -16,12 +17,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ⏱️ simple rate limiter
+last_call_time = 0
 
-# ✅ Gemini HTTP function (NO SDK)
+
+# ✅ Gemini HTTP function (robust + retry + safe parsing)
 def get_ai_feedback(prompt: str):
     api_key = os.getenv("GEMINI_API_KEY")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
     headers = {
         "Content-Type": "application/json"
@@ -30,24 +34,31 @@ def get_ai_feedback(prompt: str):
     data = {
         "contents": [
             {
-                "parts": [
-                    {"text": prompt}
-                ]
+                "parts": [{"text": prompt}]
             }
         ]
     }
 
-    response = requests.post(url, headers=headers, json=data)
+    # 🔁 retry logic
+    for attempt in range(3):
+        response = requests.post(url, headers=headers, json=data)
 
-    if response.status_code != 200:
-        return f"API Error: {response.text}"
+        if response.status_code == 200:
+            result = response.json()
 
-    result = response.json()
+            try:
+                return result["candidates"][0]["content"]["parts"][0]["text"]
+            except Exception:
+                return f"API Parse Error: {result}"
 
-    try:
-        return result["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception:
-        return str(result)
+        # ⏳ handle rate limit
+        if response.status_code == 429:
+            time.sleep(5)
+        else:
+            return f"API Error: {response.text}"
+
+    return "AI temporarily unavailable (rate limit)"
+
 
 @app.get("/")
 def home():
@@ -57,6 +68,14 @@ def home():
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     try:
+        global last_call_time
+
+        # ⏱️ basic cooldown protection
+        if time.time() - last_call_time < 3:
+            return {"error": "Too many requests. Please wait a few seconds."}
+
+        last_call_time = time.time()
+
         print("STEP 1: File received")
 
         # Read file
@@ -77,42 +96,52 @@ async def analyze(file: UploadFile = File(...)):
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # Data sample
-        data_sample = df.head(20).to_string()
+        # 🔥 reduce token usage (IMPORTANT)
+        data_sample = df.head(5).to_string()
+
         print("STEP 4: Data prepared")
 
-        # Prompt
+        # ✅ optimized prompt (shorter = cheaper)
         prompt = f"""
-You are an elite professional racing coach analyzing driver telemetry.
+You are a professional racing coach.
 
-Telemetry Sample:
+Telemetry:
 {data_sample}
 
 Stats:
-- Avg Speed: {avg_speed}
-- Max Speed: {max_speed}
-- Avg Throttle: {avg_throttle}
-- Avg Brake: {avg_brake}
+Avg Speed: {avg_speed}
+Max Speed: {max_speed}
+Throttle: {avg_throttle}
+Brake: {avg_brake}
 
-Return structured insights:
+Give:
+- Summary
+- Mistakes
+- Advice
+- 3 Questions
 
-Summary:
-Key Mistakes:
-Advice:
-Suggested Questions:
-
-Be specific, technical, and actionable.
+Be concise and technical.
 """
 
         print("STEP 5: Calling Gemini API")
 
-        # ✅ Call Gemini via HTTP
         feedback_text = get_ai_feedback(prompt)
 
         print("STEP 6: Gemini response received")
 
-        # Clean output
-        feedback = [line.strip() for line in feedback_text.split("\n") if line.strip()]
+        # ✅ fallback if API fails
+        if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
+            feedback = [
+                "AI temporarily unavailable",
+                "Try again shortly",
+                "Focus on smoother throttle and braking consistency"
+            ]
+        else:
+            feedback = [
+                line.strip()
+                for line in feedback_text.split("\n")
+                if line.strip()
+            ]
 
         return {
             "avg_speed": avg_speed,
