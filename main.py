@@ -8,7 +8,7 @@ import time
 
 app = FastAPI()
 
-# CORS (for Lovable frontend)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,11 +17,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ⏱️ simple rate limiter
+# rate limiter
 last_call_time = 0
 
 
-# ✅ OpenRouter AI (STABLE)
+# ✅ OpenRouter AI
 def get_ai_feedback(prompt: str):
     api_key = os.getenv("OPENROUTER_API_KEY")
 
@@ -40,16 +40,14 @@ def get_ai_feedback(prompt: str):
         "max_tokens": 500
     }
 
-    # 🔁 retry logic
-    for attempt in range(3):
+    for _ in range(3):
         response = requests.post(url, headers=headers, json=data)
 
         if response.status_code == 200:
-            result = response.json()
             try:
-                return result["choices"][0]["message"]["content"]
-            except Exception:
-                return f"API Parse Error: {result}"
+                return response.json()["choices"][0]["message"]["content"]
+            except:
+                return f"API Parse Error: {response.json()}"
 
         if response.status_code == 429:
             time.sleep(5)
@@ -69,14 +67,13 @@ async def analyze(file: UploadFile = File(...)):
     try:
         global last_call_time
 
-        # ⏱️ cooldown
+        # rate limit
         if time.time() - last_call_time < 2:
             return {"error": "Too many requests. Wait a moment."}
 
         last_call_time = time.time()
 
-        print("STEP 1: File received")
-
+        # read file
         contents = await file.read()
 
         try:
@@ -84,61 +81,66 @@ async def analyze(file: UploadFile = File(...)):
         except:
             df = pd.read_csv(io.BytesIO(contents))
 
-        print("STEP 2: CSV parsed")
-
-        # Metrics
+        # metrics
         avg_speed = float(df["speed"].mean()) if "speed" in df.columns else 0
         max_speed = float(df["speed"].max()) if "speed" in df.columns else 0
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # smaller sample = cheaper + faster
+        # smaller sample
         data_sample = df.head(5).to_string()
 
+        # ✅ improved prompt (clean output structure)
         prompt = f"""
-You are a professional racing coach analyzing driver telemetry.
+You are a professional racing coach.
+
+Analyze this telemetry and respond clearly in sections.
 
 Telemetry:
 {data_sample}
 
 Stats:
-- Avg Speed: {avg_speed}
-- Max Speed: {max_speed}
-- Avg Throttle: {avg_throttle}
-- Avg Brake: {avg_brake}
+Avg Speed: {avg_speed}
+Max Speed: {max_speed}
+Throttle: {avg_throttle}
+Brake: {avg_brake}
 
-Return:
-1. Summary
-2. Key Mistakes
-3. Advice
-4. 3 Suggested Questions
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 
-Be concise and technical.
+Summary:
+...
+
+Key Mistakes:
+- ...
+- ...
+
+Advice:
+- ...
+- ...
+
+Suggested Questions:
+1. ...
+2. ...
+3. ...
 """
-
-        print("STEP 3: Calling AI")
 
         feedback_text = get_ai_feedback(prompt)
 
-        print("STEP 4: AI response received")
-
-        # debug if fails
+        # debug
         if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
             return {"debug_error": feedback_text}
 
-        feedback = [
-            line.strip()
-            for line in feedback_text.split("\n")
-            if line.strip()
-        ]
+        # ✅ CLEANER PARSING (section-based)
+        sections = [s.strip() for s in feedback_text.split("\n\n") if s.strip()]
 
         return {
             "avg_speed": avg_speed,
             "max_speed": max_speed,
             "avg_throttle": avg_throttle,
             "avg_brake": avg_brake,
-            "feedback": feedback
+            "feedback": sections
         }
 
     except Exception as e:
         return {"error": str(e)}
+        
