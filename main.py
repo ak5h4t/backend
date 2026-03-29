@@ -96,12 +96,12 @@ async def analyze(file: UploadFile = File(...)):
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # 🔥 reduce token usage (IMPORTANT)
+        # 🔥 reduce token usage
         data_sample = df.head(5).to_string()
 
         print("STEP 4: Data prepared")
 
-        # ✅ optimized prompt (shorter = cheaper)
+        # ✅ optimized prompt
         prompt = f"""
 You are a professional racing coach.
 
@@ -129,19 +129,18 @@ Be concise and technical.
 
         print("STEP 6: Gemini response received")
 
-        # ✅ fallback if API fails
-        # DEBUG MODE
-if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
-    return {
-        "debug_error": feedback_text
-    }
+        # ✅ DEBUG MODE (FIXED INDENTATION)
+        if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
+            return {
+                "debug_error": feedback_text
+            }
 
-# normal flow
-feedback = [
-    line.strip()
-    for line in feedback_text.split("\n")
-    if line.strip()
-]
+        # ✅ normal flow
+        feedback = [
+            line.strip()
+            for line in feedback_text.split("\n")
+            if line.strip()
+        ]
 
         return {
             "avg_speed": avg_speed,
