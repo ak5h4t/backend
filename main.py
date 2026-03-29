@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os
 import io
-import google.generativeai as genai
+import requests
 
 app = FastAPI()
 
@@ -16,9 +16,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Gemini setup
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-pro")
+
+# ✅ Gemini HTTP function (NO SDK)
+def get_ai_feedback(prompt: str):
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+
+    if response.status_code != 200:
+        return f"API Error: {response.text}"
+
+    result = response.json()
+
+    try:
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        return str(result)
 
 
 @app.get("/")
@@ -31,7 +60,7 @@ async def analyze(file: UploadFile = File(...)):
     try:
         print("STEP 1: File received")
 
-        # Read file safely
+        # Read file
         contents = await file.read()
         print("STEP 2: File read")
 
@@ -43,14 +72,14 @@ async def analyze(file: UploadFile = File(...)):
 
         print("STEP 3: CSV parsed")
 
-        # Basic metrics (safe access)
+        # Metrics (safe)
         avg_speed = float(df["speed"].mean()) if "speed" in df.columns else 0
         max_speed = float(df["speed"].max()) if "speed" in df.columns else 0
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # Prepare data sample
-        data = df.head(20).to_string()
+        # Data sample
+        data_sample = df.head(20).to_string()
         print("STEP 4: Data prepared")
 
         # Prompt
@@ -58,7 +87,7 @@ async def analyze(file: UploadFile = File(...)):
 You are an elite professional racing coach analyzing driver telemetry.
 
 Telemetry Sample:
-{data}
+{data_sample}
 
 Stats:
 - Avg Speed: {avg_speed}
@@ -76,14 +105,12 @@ Suggested Questions:
 Be specific, technical, and actionable.
 """
 
-        print("STEP 5: Calling Gemini")
+        print("STEP 5: Calling Gemini API")
 
-        # Gemini call
-        response = model.generate_content(prompt)
+        # ✅ Call Gemini via HTTP
+        feedback_text = get_ai_feedback(prompt)
 
         print("STEP 6: Gemini response received")
-
-        feedback_text = response.text if response and response.text else "No response from AI"
 
         # Clean output
         feedback = [line.strip() for line in feedback_text.split("\n") if line.strip()]
@@ -97,5 +124,5 @@ Be specific, technical, and actionable.
         }
 
     except Exception as e:
-        print("ERROR:", str(e))
+        print("🔥 ERROR:", str(e))
         return {"error": str(e)}
