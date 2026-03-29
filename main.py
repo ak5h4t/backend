@@ -21,22 +21,23 @@ app.add_middleware(
 last_call_time = 0
 
 
-# ✅ Gemini HTTP function (robust + retry + safe parsing)
+# ✅ OpenRouter AI (STABLE)
 def get_ai_feedback(prompt: str):
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = "https://openrouter.ai/api/v1/chat/completions"
 
     headers = {
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
 
     data = {
-        "contents": [
-            {
-                "parts": [{"text": prompt}]
-            }
-        ]
+        "model": "mistralai/mistral-7b-instruct",  # ✅ reliable free model
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500
     }
 
     # 🔁 retry logic
@@ -45,19 +46,17 @@ def get_ai_feedback(prompt: str):
 
         if response.status_code == 200:
             result = response.json()
-
             try:
-                return result["candidates"][0]["content"]["parts"][0]["text"]
+                return result["choices"][0]["message"]["content"]
             except Exception:
                 return f"API Parse Error: {result}"
 
-        # ⏳ handle rate limit
         if response.status_code == 429:
             time.sleep(5)
         else:
             return f"API Error: {response.text}"
 
-    return "AI temporarily unavailable (rate limit)"
+    return "AI temporarily unavailable"
 
 
 @app.get("/")
@@ -70,72 +69,63 @@ async def analyze(file: UploadFile = File(...)):
     try:
         global last_call_time
 
-        # ⏱️ basic cooldown protection
-        if time.time() - last_call_time < 3:
-            return {"error": "Too many requests. Please wait a few seconds."}
+        # ⏱️ cooldown
+        if time.time() - last_call_time < 2:
+            return {"error": "Too many requests. Wait a moment."}
 
         last_call_time = time.time()
 
         print("STEP 1: File received")
 
-        # Read file
         contents = await file.read()
-        print("STEP 2: File read")
 
-        # Parse CSV safely
         try:
             df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-        except Exception:
+        except:
             df = pd.read_csv(io.BytesIO(contents))
 
-        print("STEP 3: CSV parsed")
+        print("STEP 2: CSV parsed")
 
-        # Metrics (safe)
+        # Metrics
         avg_speed = float(df["speed"].mean()) if "speed" in df.columns else 0
         max_speed = float(df["speed"].max()) if "speed" in df.columns else 0
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # 🔥 reduce token usage
+        # smaller sample = cheaper + faster
         data_sample = df.head(5).to_string()
 
-        print("STEP 4: Data prepared")
-
-        # ✅ optimized prompt
         prompt = f"""
-You are a professional racing coach.
+You are a professional racing coach analyzing driver telemetry.
 
 Telemetry:
 {data_sample}
 
 Stats:
-Avg Speed: {avg_speed}
-Max Speed: {max_speed}
-Throttle: {avg_throttle}
-Brake: {avg_brake}
+- Avg Speed: {avg_speed}
+- Max Speed: {max_speed}
+- Avg Throttle: {avg_throttle}
+- Avg Brake: {avg_brake}
 
-Give:
-- Summary
-- Mistakes
-- Advice
-- 3 Questions
+Return:
+1. Summary
+2. Key Mistakes
+3. Advice
+4. 3 Suggested Questions
 
 Be concise and technical.
 """
 
-        print("STEP 5: Calling Gemini API")
+        print("STEP 3: Calling AI")
 
         feedback_text = get_ai_feedback(prompt)
 
-        print("STEP 6: Gemini response received")
+        print("STEP 4: AI response received")
 
-        # ✅ DEBUG MODE (FIXED INDENTATION)
+        # debug if fails
         if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
-            return {
-                "debug_error": feedback_text
-            }
+            return {"debug_error": feedback_text}
 
-        # ✅ normal flow
         feedback = [
             line.strip()
             for line in feedback_text.split("\n")
@@ -151,5 +141,4 @@ Be concise and technical.
         }
 
     except Exception as e:
-        print("ERROR:", str(e))
         return {"error": str(e)}
