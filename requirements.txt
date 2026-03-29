@@ -1,4 +1,4 @@
 fastapi
 uvicorn
 pandas
-openai>=1.0.0
+openai==1.30.5
