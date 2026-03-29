@@ -20,9 +20,12 @@ app.add_middleware(
 last_call_time = 0
 
 
-# ✅ OpenRouter AI
+# ✅ OpenRouter AI (SAFE)
 def get_ai_feedback(prompt: str):
     api_key = os.getenv("OPENROUTER_API_KEY")
+
+    if not api_key:
+        return "API Error: Missing API key"
 
     url = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -40,18 +43,22 @@ def get_ai_feedback(prompt: str):
     }
 
     for _ in range(3):
-        response = requests.post(url, headers=headers, json=data)
+        try:
+            response = requests.post(url, headers=headers, json=data, timeout=20)
 
-        if response.status_code == 200:
-            try:
-                return response.json()["choices"][0]["message"]["content"]
-            except:
-                return f"API Parse Error: {response.json()}"
+            if response.status_code == 200:
+                try:
+                    return response.json()["choices"][0]["message"]["content"]
+                except Exception:
+                    return f"API Parse Error: {response.json()}"
 
-        if response.status_code == 429:
-            time.sleep(5)
-        else:
-            return f"API Error: {response.text}"
+            if response.status_code == 429:
+                time.sleep(5)
+            else:
+                return f"API Error: {response.text}"
+
+        except Exception as e:
+            return f"Request Failed: {str(e)}"
 
     return "AI temporarily unavailable"
 
@@ -76,7 +83,7 @@ async def analyze(file: UploadFile = File(...)):
 
         try:
             df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-        except:
+        except Exception:
             df = pd.read_csv(io.BytesIO(contents))
 
         # metrics
@@ -129,7 +136,7 @@ Suggested Questions:
         # ✅ CLEAN TEXT
         clean_text = feedback_text.replace("\\n", "\n").replace("**", "")
 
-        # ✅ SIMPLE LINE FORMAT (BEST FOR FRONTEND)
+        # ✅ SIMPLE LINE FORMAT (frontend-safe)
         feedback_lines = [
             line.strip()
             for line in clean_text.split("\n")
@@ -141,15 +148,15 @@ Suggested Questions:
             "max_speed": max_speed,
             "avg_throttle": avg_throttle,
             "avg_brake": avg_brake,
-            "feedback": feedback_lines,   # 👈 MOST IMPORTANT FIX
-            "raw_feedback": clean_text    # optional debug
+            "feedback": feedback_lines,
+            "raw_feedback": clean_text
         }
 
     except Exception as e:
         return {"error": str(e)}
 
 
-# ✅ CHAT ENDPOINT (FIXES YOUR CHAT ERROR)
+# ✅ CHAT ENDPOINT
 @app.post("/chat")
 async def chat(body: dict):
     try:
@@ -167,3 +174,4 @@ async def chat(body: dict):
 
     except Exception as e:
         return {"error": str(e)}
+        
