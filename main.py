@@ -21,7 +21,7 @@ app.add_middleware(
 def get_ai_feedback(prompt: str):
     api_key = os.getenv("GEMINI_API_KEY")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
 
     headers = {
         "Content-Type": "application/json"
@@ -48,7 +48,6 @@ def get_ai_feedback(prompt: str):
         return result["candidates"][0]["content"]["parts"][0]["text"]
     except Exception:
         return str(result)
-
 
 @app.get("/")
 def home():
@@ -124,5 +123,5 @@ Be specific, technical, and actionable.
         }
 
     except Exception as e:
-        print("🔥 ERROR:", str(e))
+        print("ERROR:", str(e))
         return {"error": str(e)}
