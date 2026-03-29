@@ -33,7 +33,7 @@ def get_ai_feedback(prompt: str):
     }
 
     data = {
-        "model": "mistralai/mistral-7b-instruct",  # ✅ reliable free model
+        "model": "meta-llama/llama-3.1-8b-instruct",
         "messages": [
             {"role": "user", "content": prompt}
         ],
