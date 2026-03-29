@@ -17,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# rate limiter
 last_call_time = 0
 
 
@@ -67,13 +66,11 @@ async def analyze(file: UploadFile = File(...)):
     try:
         global last_call_time
 
-        # rate limit
         if time.time() - last_call_time < 2:
             return {"error": "Too many requests. Wait a moment."}
 
         last_call_time = time.time()
 
-        # read file
         contents = await file.read()
 
         try:
@@ -87,14 +84,12 @@ async def analyze(file: UploadFile = File(...)):
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # smaller sample
         data_sample = df.head(5).to_string()
 
-        # ✅ improved prompt (clean output structure)
         prompt = f"""
 You are a professional racing coach.
 
-Analyze this telemetry and respond clearly in sections.
+Analyze this telemetry.
 
 Telemetry:
 {data_sample}
@@ -105,7 +100,7 @@ Max Speed: {max_speed}
 Throttle: {avg_throttle}
 Brake: {avg_brake}
 
-FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+Respond EXACTLY in this format:
 
 Summary:
 ...
@@ -126,21 +121,35 @@ Suggested Questions:
 
         feedback_text = get_ai_feedback(prompt)
 
-        # debug
+        # debug fallback
         if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
             return {"debug_error": feedback_text}
 
-        # ✅ CLEANER PARSING (section-based)
-        sections = [s.strip() for s in feedback_text.split("\n\n") if s.strip()]
+        # ✅ CLEAN TEXT
+        clean_text = feedback_text.replace("\\n", "\n").replace("**", "")
+
+        # ✅ PARSE SECTIONS
+        sections = [s.strip() for s in clean_text.split("\n\n") if s.strip()]
+
+        # ✅ SAFE STRUCTURED OUTPUT
+        def safe_get(index):
+            return sections[index] if index < len(sections) else ""
 
         return {
             "avg_speed": avg_speed,
             "max_speed": max_speed,
             "avg_throttle": avg_throttle,
             "avg_brake": avg_brake,
-            "feedback": sections
+
+            # 🔥 CLEAN STRUCTURED DATA (BEST FOR UI)
+            "summary": safe_get(0),
+            "mistakes": safe_get(1),
+            "advice": safe_get(2),
+            "questions": safe_get(3),
+
+            # optional fallback (for debugging / raw display)
+            "raw_feedback": clean_text
         }
 
     except Exception as e:
         return {"error": str(e)}
-        
