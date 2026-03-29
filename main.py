@@ -3,11 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os
 import io
-from openai import OpenAI
+import google.generativeai as genai
 
 app = FastAPI()
 
-# Allow all origins (for Lovable)
+# CORS (for Lovable frontend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,12 +16,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Gemini setup
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-1.5-flash")
+
 
 @app.get("/")
 def home():
     return {"message": "Backend is running"}
+
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
@@ -35,7 +38,7 @@ async def analyze(file: UploadFile = File(...)):
         # Parse CSV safely
         try:
             df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-        except:
+        except Exception:
             df = pd.read_csv(io.BytesIO(contents))
 
         print("STEP 3: CSV parsed")
@@ -46,11 +49,11 @@ async def analyze(file: UploadFile = File(...)):
         avg_throttle = float(df["throttle"].mean()) if "throttle" in df.columns else 0
         avg_brake = float(df["brake"].mean()) if "brake" in df.columns else 0
 
-        # Prepare data sample for AI
+        # Prepare data sample
         data = df.head(20).to_string()
         print("STEP 4: Data prepared")
 
-        # AI prompt
+        # Prompt
         prompt = f"""
 You are an elite professional racing coach analyzing driver telemetry.
 
@@ -63,27 +66,24 @@ Stats:
 - Avg Throttle: {avg_throttle}
 - Avg Brake: {avg_brake}
 
-Return:
-1. Summary
-2. Key Mistakes
-3. Advice
-4. 3 Suggested Questions
+Return structured insights:
 
-Be specific and technical.
+Summary:
+Key Mistakes:
+Advice:
+Suggested Questions:
+
+Be specific, technical, and actionable.
 """
 
-        print("STEP 5: Calling OpenAI")
+        print("STEP 5: Calling Gemini")
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        # Gemini call
+        response = model.generate_content(prompt)
 
-        print("STEP 6: OpenAI response received")
+        print("STEP 6: Gemini response received")
 
-        feedback_text = response.choices[0].message.content
+        feedback_text = response.text if response and response.text else "No response from AI"
 
         # Clean output
         feedback = [line.strip() for line in feedback_text.split("\n") if line.strip()]
