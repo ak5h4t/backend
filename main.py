@@ -1,6 +1,8 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+import os
+from openai import OpenAI
 
 app = FastAPI()
 
@@ -11,6 +13,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.get("/")
 def home():
@@ -25,19 +29,27 @@ async def analyze(file: UploadFile = File(...)):
     avg_throttle = df["throttle"].mean()
     avg_brake = df["brake"].mean()
 
-    feedback = []
+    prompt = f"""
+You are a professional racing coach.
 
-    if avg_brake > 0.3:
-        feedback.append("You are braking too much. Try braking later.")
+Telemetry:
+- Avg speed: {avg_speed:.2f}
+- Max speed: {max_speed:.2f}
+- Throttle: {avg_throttle:.2f}
+- Brake: {avg_brake:.2f}
 
-    if avg_throttle < 0.5:
-        feedback.append("You are not accelerating enough out of corners.")
+Give 3 short, actionable tips.
+"""
 
-    if avg_speed < 80:
-        feedback.append("Your overall speed is low. Focus on carrying more speed.")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
 
-    if not feedback:
-        feedback.append("Great driving! Keep pushing your limits.")
+    feedback_text = response.choices[0].message.content
+    feedback = [line.strip() for line in feedback_text.split("\n") if line.strip()]
 
     return {
         "avg_speed": float(avg_speed),
