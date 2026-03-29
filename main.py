@@ -130,18 +130,18 @@ Be concise and technical.
         print("STEP 6: Gemini response received")
 
         # ✅ fallback if API fails
-        if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
-            feedback = [
-                "AI temporarily unavailable",
-                "Try again shortly",
-                "Focus on smoother throttle and braking consistency"
-            ]
-        else:
-            feedback = [
-                line.strip()
-                for line in feedback_text.split("\n")
-                if line.strip()
-            ]
+        # DEBUG MODE
+if "API Error" in feedback_text or "unavailable" in feedback_text.lower():
+    return {
+        "debug_error": feedback_text
+    }
+
+# normal flow
+feedback = [
+    line.strip()
+    for line in feedback_text.split("\n")
+    if line.strip()
+]
 
         return {
             "avg_speed": avg_speed,
