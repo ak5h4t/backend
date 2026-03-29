@@ -61,6 +61,7 @@ def home():
     return {"message": "Backend is running"}
 
 
+# ✅ ANALYZE ENDPOINT
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     try:
@@ -128,28 +129,41 @@ Suggested Questions:
         # ✅ CLEAN TEXT
         clean_text = feedback_text.replace("\\n", "\n").replace("**", "")
 
-        # ✅ PARSE SECTIONS
-        sections = [s.strip() for s in clean_text.split("\n\n") if s.strip()]
-
-        # ✅ SAFE STRUCTURED OUTPUT
-        def safe_get(index):
-            return sections[index] if index < len(sections) else ""
+        # ✅ SIMPLE LINE FORMAT (BEST FOR FRONTEND)
+        feedback_lines = [
+            line.strip()
+            for line in clean_text.split("\n")
+            if line.strip()
+        ]
 
         return {
             "avg_speed": avg_speed,
             "max_speed": max_speed,
             "avg_throttle": avg_throttle,
             "avg_brake": avg_brake,
-
-            # 🔥 CLEAN STRUCTURED DATA (BEST FOR UI)
-            "summary": safe_get(0),
-            "mistakes": safe_get(1),
-            "advice": safe_get(2),
-            "questions": safe_get(3),
-
-            # optional fallback (for debugging / raw display)
-            "raw_feedback": clean_text
+            "feedback": feedback_lines,   # 👈 MOST IMPORTANT FIX
+            "raw_feedback": clean_text    # optional debug
         }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ✅ CHAT ENDPOINT (FIXES YOUR CHAT ERROR)
+@app.post("/chat")
+async def chat(body: dict):
+    try:
+        message = body.get("message", "")
+
+        if not message:
+            return {"error": "No message provided"}
+
+        response = get_ai_feedback(message)
+
+        if "API Error" in response or "unavailable" in response.lower():
+            return {"error": response}
+
+        return {"response": response}
 
     except Exception as e:
         return {"error": str(e)}
