@@ -30,15 +30,26 @@ async def analyze(file: UploadFile = File(...)):
     avg_brake = df["brake"].mean()
 
     prompt = f"""
-You are a professional racing coach.
+You are an elite professional racing coach analyzing driver telemetry.
 
-Telemetry:
-- Avg speed: {avg_speed:.2f}
-- Max speed: {max_speed:.2f}
-- Throttle: {avg_throttle:.2f}
-- Brake: {avg_brake:.2f}
+Your job is to provide deep, actionable performance insights.
 
-Give 3 short, actionable tips.
+Analyze the data and return:
+
+1. Overall Performance Summary
+2. Key Mistakes (specific driving issues)
+3. Performance Metrics Insights (speed, braking, throttle, consistency)
+4. Actionable Coaching Advice (clear steps to improve)
+5. Suggested Driver Questions (3 smart follow-up questions)
+
+Telemetry Data:
+{data}
+
+Rules:
+- Be specific and technical
+- Do NOT be generic
+- Focus on improving lap time and consistency
+- Use structured sections
 """
 
     response = client.chat.completions.create(
